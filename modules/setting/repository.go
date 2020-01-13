@@ -35,12 +35,12 @@ var (
 		AccessControlAllowOrigin                string
 		UseCompatSSHURI                         bool
 		DefaultCloseIssuesViaCommitsInAnyBranch bool
+		EnablePushCreateUser                    bool
+		EnablePushCreateOrg                     bool
 
 		EnableKanbanBoard           bool
 		ProjectBoardBasicKanbanType []string
 		ProjectBoardBugTriageType   []string
-		EnablePushCreateUser        bool
-		EnablePushCreateOrg         bool
 
 		// Repository editor settings
 		Editor struct {
