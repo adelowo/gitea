@@ -87,6 +87,10 @@ const (
 	CommentTypeChangeTargetBranch
 	// Delete time manual for time tracking
 	CommentTypeDeleteTimeManual
+	// Project changed
+	CommentTypeProject
+	// Project board changed
+	CommentTypeProjectBoard
 )
 
 // CommentTag defines comment tag type
@@ -112,6 +116,10 @@ type Comment struct {
 	Issue            *Issue `xorm:"-"`
 	LabelID          int64
 	Label            *Label `xorm:"-"`
+	OldProjectID     int64
+	ProjectID        int64
+	OldProject       *Project `xorm:"-"`
+	Project          *Project `xorm:"-"`
 	OldMilestoneID   int64
 	MilestoneID      int64
 	OldMilestone     *Milestone `xorm:"-"`
@@ -337,6 +345,32 @@ func (c *Comment) LoadLabel() error {
 	return nil
 }
 
+// LoadProject if comment.Type is CommentTypeProject, then load project.
+func (c *Comment) LoadProject() error {
+
+	if c.OldProjectID > 0 {
+		var oldProject Project
+		has, err := x.ID(c.OldProjectID).Get(&oldProject)
+		if err != nil {
+			return err
+		} else if has {
+			c.OldProject = &oldProject
+		}
+	}
+
+	if c.ProjectID > 0 {
+		var project Project
+		has, err := x.ID(c.ProjectID).Get(&project)
+		if err != nil {
+			return err
+		} else if has {
+			c.Project = &project
+		}
+	}
+
+	return nil
+}
+
 // LoadMilestone if comment.Type is CommentTypeMilestone, then load milestone
 func (c *Comment) LoadMilestone() error {
 	if c.OldMilestoneID > 0 {
@@ -532,6 +566,8 @@ func createComment(e *xorm.Session, opts *CreateCommentOptions) (_ *Comment, err
 		LabelID:          LabelID,
 		OldMilestoneID:   opts.OldMilestoneID,
 		MilestoneID:      opts.MilestoneID,
+		OldProjectID:     opts.OldProjectID,
+		ProjectID:        opts.ProjectID,
 		RemovedAssignee:  opts.RemovedAssignee,
 		AssigneeID:       opts.AssigneeID,
 		CommitID:         opts.CommitID,
@@ -614,6 +650,105 @@ func updateCommentInfos(e *xorm.Session, opts *CreateCommentOptions, comment *Co
 	return updateIssueCols(e, opts.Issue, "updated_unix")
 }
 
+func sendCreateCommentAction(e *xorm.Session, opts *CreateCommentOptions, comment *Comment) (err error) {
+	// Compose comment action, could be plain comment, close or reopen issue/pull request.
+	// This object will be used to notify watchers in the end of function.
+	act := &Action{
+		ActUserID: opts.Doer.ID,
+		ActUser:   opts.Doer,
+		Content:   fmt.Sprintf("%d|%s", opts.Issue.Index, strings.Split(opts.Content, "\n")[0]),
+		RepoID:    opts.Repo.ID,
+		Repo:      opts.Repo,
+		Comment:   comment,
+		CommentID: comment.ID,
+		IsPrivate: opts.Repo.IsPrivate,
+	}
+	// Check comment type.
+	switch opts.Type {
+	case CommentTypeCode:
+		if comment.ReviewID != 0 {
+			if comment.Review == nil {
+				if err := comment.loadReview(e); err != nil {
+					return err
+				}
+			}
+			if comment.Review.Type <= ReviewTypePending {
+				return nil
+			}
+		}
+		fallthrough
+	case CommentTypeComment:
+		act.OpType = ActionCommentIssue
+	case CommentTypeReopen:
+		act.OpType = ActionReopenIssue
+		if opts.Issue.IsPull {
+			act.OpType = ActionReopenPullRequest
+		}
+	case CommentTypeClose:
+		act.OpType = ActionCloseIssue
+		if opts.Issue.IsPull {
+			act.OpType = ActionClosePullRequest
+		}
+	}
+	// Notify watchers for whatever action comes in, ignore if no action type.
+	if act.OpType > 0 {
+		if err = notifyWatchers(e, act); err != nil {
+			log.Error("notifyWatchers: %v", err)
+		}
+	}
+	return nil
+}
+
+func createStatusComment(e *xorm.Session, doer *User, issue *Issue) (*Comment, error) {
+	cmtType := CommentTypeClose
+	if !issue.IsClosed {
+		cmtType = CommentTypeReopen
+	}
+	return createComment(e, &CreateCommentOptions{
+		Type:  cmtType,
+		Doer:  doer,
+		Repo:  issue.Repo,
+		Issue: issue,
+	})
+}
+
+func createLabelComment(e *xorm.Session, doer *User, repo *Repository, issue *Issue, label *Label, add bool) (*Comment, error) {
+	var content string
+	if add {
+		content = "1"
+	}
+	return createComment(e, &CreateCommentOptions{
+		Type:    CommentTypeLabel,
+		Doer:    doer,
+		Repo:    repo,
+		Issue:   issue,
+		Label:   label,
+		Content: content,
+	})
+}
+
+func createProjectComment(e *xorm.Session, doer *User, repo *Repository, issue *Issue, oldProjectID, projectID int64) (*Comment, error) {
+	return createComment(e, &CreateCommentOptions{
+		Type:         CommentTypeProject,
+		Doer:         doer,
+		Repo:         repo,
+		Issue:        issue,
+		OldProjectID: oldProjectID,
+		ProjectID:    projectID,
+	})
+}
+
+func createMilestoneComment(e *xorm.Session, doer *User, repo *Repository, issue *Issue, oldMilestoneID, milestoneID int64) (*Comment, error) {
+	return createComment(e, &CreateCommentOptions{
+		Type:           CommentTypeMilestone,
+		Doer:           doer,
+		Repo:           repo,
+		Issue:          issue,
+		OldMilestoneID: oldMilestoneID,
+		MilestoneID:    milestoneID,
+	})
+}
+
 func createDeadlineComment(e *xorm.Session, doer *User, issue *Issue, newDeadlineUnix timeutil.TimeStamp) (*Comment, error) {
 	var content string
 	var commentType CommentType
@@ -694,6 +829,8 @@ type CreateCommentOptions struct {
 	DependentIssueID int64
 	OldMilestoneID   int64
 	MilestoneID      int64
+	OldProjectID     int64
+	ProjectID        int64
 	AssigneeID       int64
 	RemovedAssignee  bool
 	OldTitle         string

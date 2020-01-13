@@ -14,7 +14,7 @@
 				{{if and .RelAvatarLink .IsPrivate}}<i class="mega-octicon octicon-lock"></i>{{end}}
 				{{if .IsTemplate}}<i class="icon fa-copy"></i>{{end}}
 				{{if .IsArchived}}<i class="archive icon archived-icon"></i>{{end}}
-				{{if .IsMirror}}<div class="fork-flag">{{$.i18n.Tr "repo.mirror_from"}} <a target="_blank" rel="noopener noreferrer" href="{{MirrorAddress $.Mirror}}">{{MirrorAddress $.Mirror}}</a></div>{{end}}
+				{{if .IsMirror}}<div class="fork-flag">{{$.i18n.Tr "repo.mirror_from"}} <a target="_blank" rel="noopener noreferrer" href="{{$.Mirror.Address}}">{{$.Mirror.Address}}</a></div>{{end}}
 				{{if .IsFork}}<div class="fork-flag">{{$.i18n.Tr "repo.forked_from"}} <a href="{{.BaseRepo.Link}}">{{SubStr .BaseRepo.RelLink 1 -1}}</a></div>{{end}}
 				{{if .IsGenerated}}<div class="fork-flag">{{$.i18n.Tr "repo.generated_from"}} <a href="{{.TemplateRepo.Link}}">{{SubStr .TemplateRepo.RelLink 1 -1}}</a></div>{{end}}
 			</div>
@@ -77,6 +77,16 @@
 						<i class="octicon octicon-git-pull-request"></i> {{.i18n.Tr "repo.pulls"}} <span class="ui {{if not .Repository.NumOpenPulls}}gray{{else}}blue{{end}} small label">{{.Repository.NumOpenPulls}}</span>
 					</a>
 				{{end}}
+
+				{{ if .IsKanbanEnabled }}
+					<a href="{{.RepoLink}}/projects" class="{{ if .IsProjectsPage }}active{{end}} item">
+						<i class="octicon octicon-git-pull-request"></i> {{.i18n.Tr "repo.kanban_board"}}
+						<span class="ui {{if not .Repository.NumOpenProjects}}gray{{else}}blue{{end}} small label">
+							{{.Repository.NumOpenProjects}}
+						</span>
+					</a>
+				{{ end }}
+
 
 				{{if and (.Permission.CanRead $.UnitTypeReleases) (not .IsEmptyRepo) }}
 				<a class="{{if .PageIsReleaseList}}active{{end}} item" href="{{.RepoLink}}/releases">

@@ -42,15 +42,19 @@ type Issue struct {
 	Labels           []*Label   `xorm:"-"`
 	MilestoneID      int64      `xorm:"INDEX"`
 	Milestone        *Milestone `xorm:"-"`
-	Priority         int
-	AssigneeID       int64        `xorm:"-"`
-	Assignee         *User        `xorm:"-"`
-	IsClosed         bool         `xorm:"INDEX"`
-	IsRead           bool         `xorm:"-"`
-	IsPull           bool         `xorm:"INDEX"` // Indicates whether is a pull request or not.
-	PullRequest      *PullRequest `xorm:"-"`
-	NumComments      int
-	Ref              string
+	ProjectID        int64      `xorm:"INDEX"`
+	// If 0, then it has not been added to a specific board in the project
+	ProjectBoardID int64    `xorm:"INDEX"`
+	Project        *Project `xorm:"-"`
+	Priority       int
+	AssigneeID     int64        `xorm:"-"`
+	Assignee       *User        `xorm:"-"`
+	IsClosed       bool         `xorm:"INDEX"`
+	IsRead         bool         `xorm:"-"`
+	IsPull         bool         `xorm:"INDEX"` // Indicates whether is a pull request or not.
+	PullRequest    *PullRequest `xorm:"-"`
+	NumComments    int
+	Ref            string
 
 	DeadlineUnix timeutil.TimeStamp `xorm:"INDEX"`
 
@@ -265,6 +269,13 @@ func (issue *Issue) loadAttributes(e Engine) (err error) {
 
 	if err = issue.loadMilestone(e); err != nil {
 		return
+	}
+
+	if issue.ProjectID > 0 && issue.Project == nil {
+		issue.Project, err = getProjectByRepoID(e, issue.RepoID, issue.ProjectID)
+		if err != nil && !IsErrProjectNotExist(err) {
+			return fmt.Errorf("getProjectByRepoID [repo_id: %d, milestone_id: %d]: %v", issue.RepoID, issue.ProjectID, err)
+		}
 	}
 
 	if err = issue.loadAssignees(e); err != nil {
@@ -1106,6 +1117,7 @@ type IssuesOptions struct {
 	PosterID    int64
 	MentionedID int64
 	MilestoneID int64
+	ProjectID   int64
 	Page        int
 	PageSize    int
 	IsClosed    util.OptionalBool
@@ -1189,6 +1201,10 @@ func (opts *IssuesOptions) setupSession(sess *xorm.Session) {
 
 	if opts.MilestoneID > 0 {
 		sess.And("issue.milestone_id=?", opts.MilestoneID)
+	}
+
+	if opts.ProjectID > 0 {
+		sess.And("issue.project_id=?", opts.ProjectID)
 	}
 
 	switch opts.IsPull {

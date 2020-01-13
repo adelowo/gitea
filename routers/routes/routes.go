@@ -508,6 +508,7 @@ func RegisterRoutes(m *macaron.Macaron) {
 	reqRepoPullsReader := context.RequireRepoReader(models.UnitTypePullRequests)
 	reqRepoIssuesOrPullsWriter := context.RequireRepoWriterOr(models.UnitTypeIssues, models.UnitTypePullRequests)
 	reqRepoIssuesOrPullsReader := context.RequireRepoReaderOr(models.UnitTypeIssues, models.UnitTypePullRequests)
+	reqRepoProjectsReader := context.RequireRepoReader(models.UnitTypeProjects)
 
 	reqRepoIssueWriter := func(ctx *context.Context) {
 		if !ctx.Repo.CanWrite(models.UnitTypeIssues) {
@@ -589,6 +590,19 @@ func RegisterRoutes(m *macaron.Macaron) {
 				Post(bindIgnErr(auth.CreateRepoForm{}), repo.ForkPost)
 		}, context.RepoIDAssignment(), context.UnitTypes(), reqRepoCodeReader)
 	}, reqSignIn)
+
+	m.Group("/projects", func() {
+		m.Get("/create", repo.CreateProject)
+		m.Post("/create", bindIgnErr(auth.UserCreateProjectForm{}), repo.CreateProjectPost)
+	}, repo.MustEnableProjects, func(ctx *context.Context) {
+
+		if err := ctx.User.GetOrganizations(true); err != nil {
+			ctx.ServerError("GetOrganizations", err)
+			return
+		}
+
+		ctx.Data["Orgs"] = ctx.User.Orgs
+	})
 
 	// ***** Release Attachment Download without Signin
 	m.Get("/:username/:reponame/releases/download/:vTag/:fileName", ignSignIn, context.RepoAssignment(), repo.MustBeNotEmpty, repo.RedirectDownload)
@@ -703,6 +717,7 @@ func RegisterRoutes(m *macaron.Macaron) {
 
 			m.Post("/labels", reqRepoIssuesOrPullsWriter, repo.UpdateIssueLabel)
 			m.Post("/milestone", reqRepoIssuesOrPullsWriter, repo.UpdateIssueMilestone)
+			m.Post("/projects", reqRepoIssuesOrPullsWriter, repo.UpdateIssueProject)
 			m.Post("/assignee", reqRepoIssuesOrPullsWriter, repo.UpdateIssueAssignee)
 			m.Post("/status", reqRepoIssuesOrPullsWriter, repo.UpdateIssueStatus)
 		}, context.RepoMustNotBeArchived())
@@ -807,6 +822,20 @@ func RegisterRoutes(m *macaron.Macaron) {
 			m.Get("/labels/", reqRepoIssuesOrPullsReader, repo.RetrieveLabels, repo.Labels)
 			m.Get("/milestones", reqRepoIssuesOrPullsReader, repo.Milestones)
 		}, context.RepoRef())
+
+		m.Group("/projects", func() {
+
+			m.Get("", repo.Projects)
+			m.Get("/new", repo.NewProject)
+			m.Post("/new", bindIgnErr(auth.CreateProjectForm{}), repo.NewRepoProjectPost)
+			m.Get("/:id", repo.ViewProject)
+			m.Get("/:id/:action", repo.ChangeProjectStatus)
+			m.Post("/:id/edit", bindIgnErr(auth.CreateProjectForm{}), repo.EditProjectPost)
+			m.Get("/:id/edit", repo.EditProject)
+			m.Post("/delete", repo.DeleteProject)
+			m.Post("/:id/:boardID/:index", repo.MoveIssueAcrossBoards)
+
+		}, reqRepoProjectsReader, repo.MustEnableProjects)
 
 		m.Group("/wiki", func() {
 			m.Get("/?:page", repo.Wiki)

@@ -22,6 +22,8 @@ globals:
   hljs: false
   SimpleMDE: false
   u2fApi: false
+  hljs: false
+  Sortable: false
   Vue: false
 
 rules:

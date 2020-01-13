@@ -126,6 +126,14 @@
 		window.initHeatmap('user-heatmap', '{{.HeatmapUser}}');
 	</script>
 {{end}}
+{{ if .PageIsProjects }}
+	<script src="{{AppSubUrl}}/vendor/plugins/sortable/sortable.min.js" charset="utf-8"></script>
+	<script type="text/javascript">
+	{{ range .ProjectBoards }}
+		initKanbanBoard("board_{{.Board.ID}}")
+	{{ end }}
+	</script>
+{{ end}}
 {{template "custom/footer" .}}
 </body>
 </html>
